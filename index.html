@@ -1,0 +1,313 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agora Video Chat with Advanced Features</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+    #controls {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    #videoContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+    .video-player {
+      width: 320px;
+      height: 240px;
+      background-color: #000;
+      border: 1px solid #ccc;
+    }
+    #chatContainer {
+      width: 300px;
+      height: 200px;
+      border: 1px solid #ccc;
+      background-color: white;
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    #chatMessages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      border-bottom: 1px solid #ccc;
+    }
+    #chatInput {
+      width: 100%;
+      padding: 5px;
+      border: none;
+      outline: none;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    button:hover:not(:disabled) {
+      background-color: #0056b3;
+    }
+    .toggled-off {
+      background-color: #dc3545;
+    }
+    .toggled-off:hover:not(:disabled) {
+      background-color: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Agora Video Chat</h1>
+  <div id="controls">
+    <p>Channel: test-channel</p>
+    <button id="joinBtn" onclick="joinChannel()">Join Call</button>
+    <button id="leaveBtn" onclick="leaveChannel()" disabled>Leave Call</button>
+    <button id="muteAudioBtn" onclick="toggleAudio()" disabled>Mute Audio</button>
+    <button id="muteVideoBtn" onclick="toggleVideo()" disabled>Disable Video</button>
+  </div>
+  <div id="videoContainer"></div>
+  <div id="chatContainer">
+    <div id="chatMessages"></div>
+    <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="if(event.key === 'Enter') sendMessage()" />
+  </div>
+
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.23.2.js"></script>
+  <script>
+    // Replace with your Agora App ID
+    const APP_ID = "e807090f66d74f7fadc5addfc53f0165"; // Add your App ID here
+    // Replace with your temporary token
+    const TOKEN = "007eJxTYFBODFn8Wdr3jlE/443wqFDesnt3Vh602BP0bu2sXJsz3G0KDKkWBuYGlgZpZmYp5iZp5mmJKcmmiSkpacmmxmkGhmamKrc5MxoCGRk2tT9nZWSAQBCfh6EktbhENzkjMS8vNYeBAQBYFSL0"; // Add your new token here
+    const channelName = "test-channel"; // Must match token's channel
+    let client = null;
+    let localTracks = [];
+    let remoteUsers = {};
+    let isAudioMuted = false;
+    let isVideoMuted = false;
+    let localUid = null;
+
+    // Initialize Agora client
+    client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+    // Join channel
+    async function joinChannel() {
+      try {
+        // Join the channel
+        localUid = await client.join(APP_ID, channelName, TOKEN, null);
+
+        // Create local tracks
+        localTracks = await AgoraRTC.createMicrophoneAndCameraTracks();
+
+        // Set up local video
+        const localPlayer = document.createElement("div");
+        localPlayer.id = `player-${localUid}`;
+        localPlayer.className = "video-player";
+        document.getElementById("videoContainer").appendChild(localPlayer);
+        localTracks[1].play(localPlayer.id);
+
+        // Publish tracks
+        await client.publish(localTracks);
+
+        // Update button states
+        document.getElementById("joinBtn").disabled = true;
+        document.getElementById("leaveBtn").disabled = false;
+        document.getElementById("muteAudioBtn").disabled = false;
+        document.getElementById("muteVideoBtn").disabled = false;
+
+        // Add join message to chat
+        addChatMessage("System", `You joined the channel`);
+
+        console.log("Joined channel successfully");
+      } catch (error) {
+        console.error("Error joining channel:", error);
+        alert("Failed to join channel: " + error.message);
+      }
+    }
+
+    // Leave channel
+    async function leaveChannel() {
+      try {
+        // Stop and close local tracks
+        for (let track of localTracks) {
+          track.stop();
+          track.close();
+        }
+
+        // Remove all video players
+        document.getElementById("videoContainer").innerHTML = "";
+
+        // Leave the channel
+        await client.leave();
+
+        // Reset state
+        localTracks = [];
+        remoteUsers = {};
+        isAudioMuted = false;
+        isVideoMuted = false;
+        document.getElementById("joinBtn").disabled = false;
+        document.getElementById("leaveBtn").disabled = true;
+        document.getElementById("muteAudioBtn").disabled = true;
+        document.getElementById("muteVideoBtn").disabled = true;
+        document.getElementById("muteAudioBtn").textContent = "Mute Audio";
+        document.getElementById("muteAudioBtn").classList.remove("toggled-off");
+        document.getElementById("muteVideoBtn").textContent = "Disable Video";
+        document.getElementById("muteVideoBtn").classList.remove("toggled-off");
+        document.getElementById("chatMessages").innerHTML = "";
+
+        console.log("Left channel successfully");
+      } catch (error) {
+        console.error("Error leaving channel:", error);
+        alert("Failed to leave channel");
+      }
+    }
+
+    // Toggle audio
+    function toggleAudio() {
+      if (!localTracks[0]) return;
+      isAudioMuted = !isAudioMuted;
+      localTracks[0].setMuted(isAudioMuted);
+      const btn = document.getElementById("muteAudioBtn");
+      btn.textContent = isAudioMuted ? "Unmute Audio" : "Mute Audio";
+      btn.classList.toggle("toggled-off", isAudioMuted);
+      addChatMessage("System", isAudioMuted ? "You muted your audio" : "You unmuted your audio");
+    }
+
+    // Toggle video
+    function toggleVideo() {
+      if (!localTracks[1]) return;
+      isVideoMuted = !isVideoMuted;
+      localTracks[1].setMuted(isVideoMuted);
+      const btn = document.getElementById("muteVideoBtn");
+      btn.textContent = isVideoMuted ? "Enable Video" : "Disable Video";
+      btn.classList.toggle("toggled-off", isVideoMuted);
+      addChatMessage("System", isVideoMuted ? "You disabled your video" : "You enabled your video");
+    }
+
+    // Handle remote user joining
+    client.on("user-published", async (user, mediaType) => {
+      const uid = user.uid;
+      await client.subscribe(user, mediaType);
+
+      if (mediaType === "video") {
+        const remotePlayer = document.createElement("div");
+        remotePlayer.id = `player-${uid}`;
+        remotePlayer.className = "video-player";
+        document.getElementById("videoContainer").appendChild(remotePlayer);
+        user.videoTrack.play(remotePlayer.id);
+      }
+
+      if (mediaType === "audio") {
+        user.audioTrack.play();
+      }
+
+      remoteUsers[uid] = user;
+      addChatMessage("System", `User ${uid} joined the channel`);
+    });
+
+    // Handle remote user leaving
+    client.on("user-unpublished", (user) => {
+      const uid = user.uid;
+      const player = document.getElementById(`player-${uid}`);
+      if (player) {
+        player.remove();
+      }
+      delete remoteUsers[uid];
+    });
+
+    // Handle client leave
+    client.on("user-left", (user) => {
+      const uid = user.uid;
+      const player = document.getElementById(`player-${uid}`);
+      if (player) {
+        player.remove();
+      }
+      delete remoteUsers[uid];
+      addChatMessage("System", `User ${uid} left the channel`);
+    });
+
+    // Simple client-side chat (broadcast to all users in the channel)
+    function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const message = input.value.trim();
+      if (!message) return;
+      const sender = localUid || "You";
+      addChatMessage(sender, message);
+      // Simulate broadcasting to other users (client-side only for simplicity)
+      Object.values(remoteUsers).forEach(user => {
+        // In a real app, use Agora RTM or a server to send messages
+        addChatMessage(sender, message, true); // Simulate receiving on other clients
+      });
+      input.value = "";
+    }
+
+    // Add message to chat window
+    function addChatMessage(sender, message, isRemote = false) {
+      const chatMessages = document.getElementById("chatMessages");
+      const messageDiv = document.createElement("div");
+      messageDiv.textContent = `${sender}: ${message}`;
+      if (isRemote) {
+        messageDiv.style.color = "#555";
+      }
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  </script>
+</body>
+</html>
